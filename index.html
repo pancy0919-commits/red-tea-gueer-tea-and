@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>茶飲生存賽｜茶包新生隨機抽籤轉盤</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans TC', 'Inter', sans-serif;
+      background: linear-gradient(135deg, #FDF8F2 0%, #F4E8D8 50%, #E9F0E6 100%);
+      min-height: 100vh;
+    }
+
+    /* 轉盤外框立體光澤與陰影 */
+    .wheel-frame {
+      box-shadow:
+        0 20px 45px -10px rgba(92, 64, 51, 0.28),
+        0 0 0 10px #D4A373,
+        0 0 0 14px #8C5A3C,
+        inset 0 0 20px rgba(0, 0, 0, 0.25);
+    }
+
+    /* 指針晃動動畫 */
+    @keyframes pointerTick {
+      0% { transform: translateX(-50%) rotate(0deg); }
+      35% { transform: translateX(-50%) rotate(-18deg); }
+      100% { transform: translateX(-50%) rotate(0deg); }
+    }
+    .pointer-tick {
+      animation: pointerTick 0.12s ease-out;
+    }
+
+    /* 抽籤按鈕脈衝光暈 */
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 8px 25px rgba(217, 119, 6, 0.45); }
+      50% { box-shadow: 0 12px 35px rgba(217, 119, 6, 0.75); }
+    }
+    .spin-btn-glow:not(:disabled) {
+      animation: pulseGlow 2.2s infinite;
+    }
+
+    /* 彈窗進場動畫 */
+    @keyframes modalPop {
+      0% { opacity: 0; transform: scale(0.85) translateY(15px); }
+      70% { opacity: 1; transform: scale(1.03) translateY(-3px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-pop {
+      animation: modalPop 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* 彩帶畫布覆蓋層 */
+    #confettiCanvas {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 60;
+    }
+  </style>
+</head>
+<body class="text-stone-800 flex flex-col items-center py-6 px-4 sm:px-6">
+
+  <!-- 彩帶特效畫布 -->
+  <canvas id="confettiCanvas"></canvas>
+
+  <!-- 頂部標題與音效控制區 -->
+  <header class="w-full max-w-4xl flex flex-col sm:flex-row items-center justify-between gap-3 mb-6">
+    <div class="text-center sm:text-left">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-800/10 text-amber-900 text-xs font-bold tracking-wider mb-1.5">
+        <span>🏆 特調飲品生存晉級賽</span>
+        <span>•</span>
+        <span>新生選拔輪</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
+        茶包新生隨機抽籤轉盤
+      </h1>
+      <p class="text-sm text-stone-600 mt-0.5">
+        門檻提示：前兩名保衛戰已啟動，挑戰者總評級不可低於 <span class="font-bold text-amber-800">B</span>！
+      </p>
+    </div>
+
+    <!-- 音效開關按鈕 -->
+    <button id="soundToggleBtn" type="button"
+      class="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/85 hover:bg-white text-stone-700 font-semibold text-sm shadow-sm border border-stone-200/80 transition active:scale-95">
+      <span id="soundIcon" class="text-lg">🔊</span>
+      <span id="soundLabel">音效：開啟</span>
+    </button>
+  </header>
+
+  <!-- 主要內容雙欄/單欄自適應排版 -->
+  <main class="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+    <!-- 左側：轉盤舞台區 -->
+    <section class="lg:col-span-7 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-xl border border-amber-900/10 flex flex-col items-center">
+      
+      <!-- 狀態提示條 -->
+      <div class="w-full flex items-center justify-between text-xs sm:text-sm font-semibold text-stone-600 bg-amber-50/90 border border-amber-200/70 rounded-2xl px-4 py-2.5 mb-6">
+        <span>🎯 待命新生人數：<strong id="activeCountText" class="text-amber-800 text-base">9</strong> / 9 位</span>
+        <span id="wheelStatusText" class="text-emerald-700">準備就緒，隨時開轉！</span>
+      </div>
+
+      <!-- 轉盤與指針容器 -->
+      <div class="relative w-full max-w-[340px] sm:max-w-[390px] aspect-square flex items-center justify-center my-2">
+        
+        <!-- 頂部固定紅色/金色指針 -->
+        <div id="wheelPointer" class="absolute -top-5 left-1/2 -translate-x-1/2 z-20 drop-shadow-lg origin-top">
+          <svg width="46" height="54" viewBox="0 0 46 54" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M23 52L4 16C1.5 11 5.2 4 11 4H35C40.8 4 44.5 11 42 16L23 52Z" fill="#DC2626" stroke="#FEF3C7" stroke-width="3"/>
+            <circle cx="23" cy="14" r="5" fill="#FBBF24"/>
+          </svg>
+        </div>
+
+        <!-- 圓形轉盤畫布 -->
+        <div class="w-full h-full rounded-full wheel-frame overflow-hidden bg-amber-100 relative">
+          <canvas id="wheelCanvas" class="w-full h-full block"></canvas>
+          
+          <!-- 轉盤中心裝飾軸心 -->
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-amber-700 shadow-lg border-4 border-amber-100 flex items-center justify-center pointer-events-none">
+            <span class="text-white font-black text-xs sm:text-sm tracking-widest drop-shadow">TEA</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 開始抽籤主按鈕 -->
+      <div class="w-full max-w-xs mt-7 flex flex-col items-center gap-2">
+        <button id="spinBtn" type="button"
+          class="spin-btn-glow w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-600 via-orange-500 to-amber-600 hover:from-amber-500 hover:to-orange-500 disabled:from-stone-400 disabled:to-stone-400 disabled:cursor-not-allowed text-white font-black text-lg sm:text-xl tracking-wider shadow-lg transition transform active:scale-95 flex items-center justify-center gap-2">
+          <span>🎲</span>
+          <span id="spinBtnText">開始抽籤！</span>
+        </button>
+        <p class="text-xs text-stone-500 text-center">點擊按鈕旋轉轉盤，選出下一位登場的茶包新生</p>
+      </div>
+    </section>
+
+    <!-- 右側：新生名單管理與已出戰紀錄 -->
+    <aside class="lg:col-span-5 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-6 shadow-xl border border-amber-900/10 flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-stone-200/80 pb-3">
+        <div>
+          <h2 class="text-lg font-extrabold text-stone-800">📋 新生候選名單</h2>
+          <p class="text-xs text-stone-500">可手動勾選或取消參與本輪轉盤的茶包</p>
+        </div>
+        <button id="resetAllBtn" type="button"
+          class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-amber-900 text-xs font-bold border border-stone-200 transition active:scale-95">
+          ↺ 一鍵重置全部
+        </button>
+      </div>
+
+      <!-- 名單列表容器 -->
+      <ul id="rosterList" class="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+        <!-- 由 JS 動態生成 9 位茶包新生項目 -->
+      </ul>
+
+      <!-- 底部說明卡 -->
+      <div class="mt-1 p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-amber-50 border border-emerald-200/60 text-xs text-stone-600 leading-relaxed">
+        <span class="font-bold text-emerald-800">💡 裁判長小提醒：</span>
+        每次抽出新生後，可以在結果卡片一鍵將該選手「移出名單」，方便連續抽選不重複！
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- 中獎結果彈出視窗 (Modal) -->
+  <div id="resultModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-stone-900/60 backdrop-blur-sm p-4">
+    <div class="modal-pop w-full max-w-md bg-gradient-to-b from-amber-50 via-white to-orange-50/70 rounded-3xl p-6 sm:p-7 shadow-2xl border-2 border-amber-300 relative overflow-hidden">
+      
+      <!-- 頂部裝飾彩條 -->
+      <div class="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-500 via-orange-400 to-emerald-500"></div>
+
+      <div class="text-center">
+        <div class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/15 text-amber-800 text-xs font-extrabold tracking-wider mb-3">
+          <span>✨ 命運之輪已選定 ✨</span>
+        </div>
+        
+        <h3 class="text-sm font-bold text-stone-500 mb-1">本輪出戰新生選手</h3>
+        
+        <!-- 獲選選手名稱 -->
+        <div id="winnerName" class="text-2xl sm:text-3xl font-black text-stone-900 leading-snug my-2 px-2">
+          Dilmah 水蜜桃紅茶 (Peach)
+        </div>
+
+        <!-- 茶葉類型標籤 -->
+        <div class="flex justify-center mt-2 mb-4">
+          <span id="winnerTag" class="px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-orange-100 text-orange-800 border border-orange-200 shadow-sm">
+            🍑 果香紅茶系
+          </span>
+        </div>
+
+        <!-- 選手特色簡介 -->
+        <p id="winnerDesc" class="text-sm text-stone-600 bg-white/90 rounded-2xl p-3.5 border border-stone-200/80 mb-5 leading-relaxed">
+          帶有香甜水蜜桃果香的紅茶基底，無論做水果氣泡飲或蜂蜜特調都極具爆發力！
+        </p>
+
+        <!-- 勾選移除選項 -->
+        <label class="flex items-center justify-center gap-2.5 p-3 rounded-2xl bg-amber-100/60 hover:bg-amber-100 border border-amber-300/80 cursor-pointer mb-5 transition select-none">
+          <input id="removeWinnerCheckbox" type="checkbox" checked
+            class="w-5 h-5 rounded text-amber-600 focus:ring-amber-500 border-amber-400 cursor-pointer">
+          <span class="text-sm font-bold text-amber-950">將此選手移出名單（避免重複抽中）</span>
+        </label>
+
+        <!-- 確認按鈕 -->
+        <button id="confirmWinnerBtn" type="button"
+          class="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base shadow-lg transition transform active:scale-95">
+          迎戰確認！關閉視窗
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 溫馨提示訊息框 (取代 alert) -->
+  <div id="toastBox" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-5 py-3 rounded-2xl bg-stone-900 text-white text-sm font-semibold shadow-xl">
+    提示訊息
+  </div>
+
+  <script>
+    /**
+     * 9 位茶包新生完整資料庫
+     * 包含名稱、轉盤簡稱、茶葉類型標籤、風味介紹與專屬配色
+     */
+    const INITIAL_CANDIDATES = [
+      {
+        id: 1,
+        name: "Dilmah 水蜜桃紅茶 (Peach)",
+        shortName: "Dilmah 水蜜桃紅茶",
+        tag: "🍑 果香紅茶系",
+        tagStyle: "bg-orange-100 text-orange-800 border-orange-200",
+        desc: "香氣甜美濃郁的水蜜桃風味紅茶，遇上蜂蜜與氣泡水或冰鮮奶都能瞬間變身明星特調！",
+        color: "#F48C56",
+        textColor: "#FFFFFF",
+        active: true
+      },
+      {
+        id: 2,
+        name: "經典紅茶 (Black Tea)",
+        shortName: "經典紅茶",
+        tag: "🍂 醇厚全發酵紅茶",
+        tagStyle: "bg-red-100 text-red-800 border-red-200",
+        desc: "最純粹穩健的紅茶底蘊，茶湯紅潤溫順，是挑戰高分鮮奶茶與水果茶的實力派選手。",
+        color: "#B84A39",
+        textColor: "#FFFFFF",
+        active: true
+      },
+      {
+        id: 3,
+        name: "凍頂烏龍 (Dongding Oolong)",
+        shortName: "凍頂烏龍",
+        tag: "🔥 重烘焙熟茶烏龍",
+        tagStyle: "bg-amber-100 text-amber-900 border-amber-300",
+        desc: "經過深度烘焙的台灣經典熟烏龍，帶有迷人炭焙與堅果焦糖香，做炭焙烏龍鮮奶無敵強！",
+        color: "#8C5A3C",
+        textColor: "#FFFFFF",
+        active: true
+      },
+      {
+        id: 4,
+        name: "杉林溪金萱茶 (Jhinhsuan Tea)",
+        shortName: "杉林溪金萱茶",
+        tag: "🥛 天然奶香輕發酵生茶",
+        tagStyle: "bg-emerald-100 text-emerald-900 border-emerald-200",
+        desc: "台灣高山代表！輕發酵不烘焙的生茶，天生自帶淡淡的天然牛奶糖清香，口感滑順清甜。",
+        color: "#6A994E",
+        textColor: "#FFFFFF",
+        active: true
+      },
+      {
+        id: 5,
+        name: "Dilmah 傳統烏龍 (Traditional Oolong)",
+        shortName: "Dilmah 傳統烏龍",
+        tag: "🪵 經典烘焙烏龍",
+        tagStyle: "bg-yellow-100 text-yellow-900 border-yellow-300",
+        desc: "溫潤厚實的傳統烘焙烏龍茶，茶湯呈琥珀金黃色，不刮胃且回甘持久，進可攻退可守。",
+        color: "#C68B59",
+        textColor: "#FFFFFF",
+        active: true
+      },
+      {
+        id: 6,
+        name: "天仁茗茶 烏龍茶",
+        shortName: "天仁茗茶 烏龍茶",
+        tag: "🍃 溫潤日常烏龍",
+        tagStyle: "bg-lime-100 text-lime-900 border-lime-300",
+        desc: "台灣國民經典烏龍茶包，茶韻平衡順口，無論熱泡純飲或加蜂蜜冷飲都非常百搭。",
+        color: "#D4A373",
+        textColor: "#3D2616",
+        active: true
+      },
+      {
+        id: 7,
+        name: "天仁茗茶 茉香綠茶",
+        shortName: "天仁茗茶 茉香綠茶",
+        tag: "🌼 清爽花香綠茶",
+        tagStyle: "bg-green-100 text-green-800 border-green-200",
+        desc: "清新綠茶融合淡雅茉莉花香，清爽解膩度極高，非常適合挑戰氣泡飲或蜂蜜綠茶路線！",
+        color: "#52B788",
+        textColor: "#FFFFFF",
+        active: true
+      },
+      {
+        id: 8,
+        name: "Dilmah 茉莉綠茶 (Jasmine Green Tea)",
+        shortName: "Dilmah 茉莉綠茶",
+        tag: "🌸 優雅濃花香綠茶",
+        tagStyle: "bg-pink-100 text-pink-800 border-pink-200",
+        desc: "花香層次更為細膩突出的茉莉綠茶，冷泡或加一點蜂蜜就能釋放出高級花果調香氣。",
+        color: "#E07A9A",
+        textColor: "#FFFFFF",
+        active: true
+      },
+      {
+        id: 9,
+        name: "經典綠茶 (Green Tea)",
+        shortName: "經典綠茶",
+        tag: "🌿 純粹無發酵綠茶",
+        tagStyle: "bg-teal-100 text-teal-800 border-teal-200",
+        desc: "保留最原始茶葉清香的無發酵綠茶，清爽度滿點，搭配檸檬或蜂蜜能創造極致解渴感。",
+        color: "#3D8B7D",
+        textColor: "#FFFFFF",
+        active: true
+      }
+    ];
+
+    // 深拷貝建立當前名單狀態
+    let candidates = JSON.parse(JSON.stringify(INITIAL_CANDIDATES));
+
+    // DOM 元素參照
+    const wheelCanvas = document.getElementById("wheelCanvas");
+    const ctx = wheelCanvas.getContext("2d");
+    const spinBtn = document.getElementById("spinBtn");
+    const spinBtnText = document.getElementById("spinBtnText");
+    const wheelPointer = document.getElementById("wheelPointer");
+    const activeCountText = document.getElementById("activeCountText");
+    const wheelStatusText = document.getElementById("wheelStatusText");
+    const rosterList = document.getElementById("rosterList");
+    const resetAllBtn = document.getElementById("resetAllBtn");
+    const soundToggleBtn = document.getElementById("soundToggleBtn");
+    const soundIcon = document.getElementById("soundIcon");
+    const soundLabel = document.getElementById("soundLabel");
+
+    // 結果彈窗元素
+    const resultModal = document.getElementById("resultModal");
+    const winnerNameEl = document.getElementById("winnerName");
+    const winnerTagEl = document.getElementById("winnerTag");
+    const winnerDescEl = document.getElementById("winnerDesc");
+    const removeWinnerCheckbox = document.getElementById("removeWinnerCheckbox");
+    const confirmWinnerBtn = document.getElementById("confirmWinnerBtn");
+    const toastBox = document.getElementById("toastBox");
+
+    // 轉盤動畫狀態變數
+    let currentRotation = 0; // 弧度
+    let isSpinning = false;
+    let soundEnabled = true;
+    let audioCtx = null;
+    let lastTickIndex = -1;
+    let currentWinner = null;
+
+    /**
+     * 初始化 Web Audio API 音效引擎（無需外部音檔）
+     */
+    function initAudio() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtx = new AudioContextClass();
+        }
+      }
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+    }
+
+    /**
+     * 播放指針撥動扇區的清脆「滴答聲」
+     */
+    function playTickSound() {
+      if (!soundEnabled) return;
+      try {
+        initAudio();
+        if (!audioCtx) return;
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(720, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(280, audioCtx.currentTime + 0.045);
+
+        gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.045);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.05);
+      } catch (e) {
+        // 忽略瀏覽器音效限制錯誤
+      }
+    }
+
+    /**
+     * 播放抽中選手時的歡呼和弦音效
+     */
+    function playWinFanfare() {
+      if (!soundEnabled) return;
+      try {
+        initAudio();
+        if (!audioCtx) return;
+
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          const startTime = audioCtx.currentTime + idx * 0.09;
+
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(freq, startTime);
+
+          gain.gain.setValueAtTime(0.001, startTime);
+          gain.gain.linearRampToValueAtTime(0.2, startTime + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.45);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(startTime);
+          osc.stop(startTime + 0.48);
+        });
+      } catch (e) {
+        // 忽略音效錯誤
+      }
+    }
+
+    /**
+     * 顯示短暫提示訊息 (Toast)
+     */
+    let toastTimer = null;
+    function showToast(msg) {
+      toastBox.textContent = msg;
+      toastBox.classList.remove("hidden");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toastBox.classList.add("hidden");
+      }, 2500);
+    }
+
+    /**
+     * 取得目前勾選啟用的選手陣列
+     */
+    function getActiveCandidates() {
+      return candidates.filter(c => c.active);
+    }
+
+    /**
+     * 設定高解析度 Retina Canvas 尺寸並重繪轉盤
+     */
+    function resizeAndDrawWheel() {
+      const container = wheelCanvas.parentElement;
+      const size = container.clientWidth;
+      const dpr = window.devicePixelRatio || 1;
+
+      wheelCanvas.width = size * dpr;
+      wheelCanvas.height = size * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      drawWheel(size);
+    }
+
+    /**
+     * 繪製轉盤扇區、邊框裝飾與選手文字
+     */
+    function drawWheel(size) {
+      const activeList = getActiveCandidates();
+      const center = size / 2;
+      const radius = size / 2;
+
+      ctx.clearRect(0, 0, size, size);
+
+      // 若全部選手皆被移出名單
+      if (activeList.length === 0) {
+        ctx.fillStyle = "#E7E5E4";
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#57534E";
+        ctx.font = "bold 16px 'Noto Sans TC', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("所有新生皆已出戰！", center, center - 12);
+        ctx.font = "13px 'Noto Sans TC', sans-serif";
+        ctx.fillText("請點擊右側「一鍵重置全部」", center, center + 14);
+        return;
+      }
+
+      const sliceAngle = (Math.PI * 2) / activeList.length;
+
+      activeList.forEach((item, index) => {
+        const startAngle = currentRotation + index * sliceAngle;
+        const endAngle = startAngle + sliceAngle;
+
+        // 1. 繪製扇形區塊
+        ctx.beginPath();
+        ctx.moveTo(center, center);
+        ctx.arc(center, center, radius, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fillStyle = item.color;
+        ctx.fill();
+
+        // 2. 繪製扇區分隔白線
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.65)";
+        ctx.stroke();
+
+        // 3. 繪製外圈金色小鉚釘裝飾點
+        const pinAngle = startAngle;
+        const pinRadius = radius - 10;
+        const pinX = center + Math.cos(pinAngle) * pinRadius;
+        const pinY = center + Math.sin(pinAngle) * pinRadius;
+        ctx.beginPath();
+        ctx.arc(pinX, pinY, 3, 0, Math.PI * 2);
+        ctx.fillStyle = "#FEF3C7";
+        ctx.fill();
+
+        // 4. 繪製選手文字（沿半徑方向排列，清晰易讀）
+        ctx.save();
+        ctx.translate(center, center);
+        ctx.rotate(startAngle + sliceAngle / 2);
+
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = item.textColor;
+
+        // 根據選手數量與轉盤大小動態調整字級
+        const fontSize = activeList.length > 7
+          ? Math.max(11, Math.floor(size * 0.034))
+          : Math.max(13, Math.floor(size * 0.04));
+        ctx.font = `800 ${fontSize}px 'Noto Sans TC', sans-serif`;
+
+        // 加上微弱文字陰影增加對比度
+        ctx.shadowColor = item.textColor === "#FFFFFF" ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.4)";
+        ctx.shadowBlur = 3;
+
+        const label = item.shortName;
+        const textDist = radius - 22;
+        ctx.fillText(label, textDist, 0);
+
+        ctx.restore();
+      });
+    }
+
+    /**
+     * 計算目前正上方指針 (-Math.PI / 2) 所指到的選手索引
+     */
+    function getPointerCandidateIndex(rotation, count) {
+      if (count === 0) return -1;
+      const sliceAngle = (Math.PI * 2) / count;
+      // 頂部指針位於 270 度 (即 1.5 * Math.PI)
+      const pointerAngle = (Math.PI * 1.5 - (rotation % (Math.PI * 2)) + Math.PI * 4) % (Math.PI * 2);
+      return Math.floor(pointerAngle / sliceAngle) % count;
+    }
+
+    /**
+     * 觸發指針輕微彈跳動畫
+     */
+    function triggerPointerTick() {
+      wheelPointer.classList.remove("pointer-tick");
+      void wheelPointer.offsetWidth; // 強制 reflow 重新觸發動畫
+      wheelPointer.classList.add("pointer-tick");
+    }
+
+    /**
+     * 開始旋轉轉盤（流暢加速後自然減速）
+     */
+    function startSpin() {
+      const activeList = getActiveCandidates();
+      if (isSpinning) return;
+
+      if (activeList.length === 0) {
+        showToast("名單內已經沒有待命新生囉，請先重置名單！");
+        return;
+      }
+
+      // 若只剩 1 位選手，也讓他轉一圈增加儀式感
+      isSpinning = true;
+      spinBtn.disabled = true;
+      spinBtnText.textContent = "命運轉動中...";
+      wheelStatusText.textContent = "🔥 轉盤高速旋轉中...";
+      wheelStatusText.className = "text-orange-600 font-bold animate-pulse";
+
+      initAudio();
+
+      // 隨機決定旋轉圈數 (6 ~ 9 圈) + 隨機停止角度
+      const extraSpins = (6 + Math.random() * 3) * Math.PI * 2;
+      const randomOffset = Math.random() * Math.PI * 2;
+      const startRot = currentRotation;
+      const targetRot = startRot + extraSpins + randomOffset;
+
+      const duration = 4200; // 4.2 秒自然減速
+      const startTime = performance.now();
+      lastTickIndex = getPointerCandidateIndex(startRot, activeList.length);
+
+      function animateFrame(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Quintic Ease-Out 曲線：起步有力、尾段極度絲滑自然減速
+        const easeOut = 1 - Math.pow(1 - progress, 4.2);
+        currentRotation = startRot + (targetRot - startRot) * easeOut;
+
+        // 偵測指針是否跨過扇區邊界，觸發滴答音效與指針彈跳
+        const currentIdx = getPointerCandidateIndex(currentRotation, activeList.length);
+        if (currentIdx !== lastTickIndex) {
+          lastTickIndex = currentIdx;
+          playTickSound();
+          triggerPointerTick();
+        }
+
+        drawWheel(wheelCanvas.parentElement.clientWidth);
+
+        if (progress < 1) {
+          requestAnimationFrame(animateFrame);
+        } else {
+          // 轉盤完全停止
+          isSpinning = false;
+          spinBtn.disabled = false;
+          spinBtnText.textContent = "開始抽籤！";
+          wheelStatusText.textContent = "🎉 本輪選手已誕生！";
+          wheelStatusText.className = "text-emerald-700 font-bold";
+
+          const winnerIdx = getPointerCandidateIndex(currentRotation, activeList.length);
+          currentWinner = activeList[winnerIdx];
+          handleWinnerSelected(currentWinner);
+        }
+      }
+
+      requestAnimationFrame(animateFrame);
+    }
+
+    /**
+     * 處理抽中選手後的慶祝特效與彈窗顯示
+     */
+    function handleWinnerSelected(winner) {
+      if (!winner) return;
+      playWinFanfare();
+      launchConfetti();
+
+      winnerNameEl.textContent = winner.name;
+      winnerTagEl.textContent = winner.tag;
+      winnerTagEl.className = `px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold border shadow-sm ${winner.tagStyle}`;
+      winnerDescEl.textContent = winner.desc;
+      removeWinnerCheckbox.checked = true;
+
+      resultModal.classList.remove("hidden");
+      resultModal.classList.add("flex");
+    }
+
+    /**
+     * 關閉結果彈窗並根據勾選狀態更新名單
+     */
+    function closeWinnerModal() {
+      if (currentWinner && removeWinnerCheckbox.checked) {
+        const target = candidates.find(c => c.id === currentWinner.id);
+        if (target) {
+          target.active = false;
+          showToast(`已將「${target.shortName}」移出本輪轉盤名單`);
+        }
+      }
+      resultModal.classList.add("hidden");
+      resultModal.classList.remove("flex");
+      currentWinner = null;
+      renderRoster();
+      resizeAndDrawWheel();
+    }
+
+    /**
+     * 渲染右側新生名單管理列表
+     */
+    function renderRoster() {
+      const activeList = getActiveCandidates();
+      activeCountText.textContent = activeList.length;
+
+      if (activeList.length === 0) {
+        wheelStatusText.textContent = "名單已清空，請重置";
+        wheelStatusText.className = "text-stone-500";
+      } else if (!isSpinning) {
+        wheelStatusText.textContent = "準備就緒，隨時開轉！";
+        wheelStatusText.className = "text-emerald-700";
+      }
+
+      rosterList.innerHTML = "";
+      candidates.forEach(item => {
+        const li = document.createElement("li");
+        li.className = `flex items-center justify-between p-2.5 sm:p-3 rounded-2xl border transition cursor-pointer select-none ${
+          item.active
+            ? "bg-white border-stone-200/90 shadow-sm hover:border-amber-400"
+            : "bg-stone-100/80 border-stone-200/50 opacity-60"
+        }`;
+
+        li.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="w-4 h-4 rounded-full shrink-0 border border-black/10 shadow-inner" style="background-color: ${item.color};"></span>
+            <div class="truncate">
+              <div class="text-sm font-bold ${item.active ? "text-stone-800" : "line-through text-stone-500"} truncate">
+                ${item.name}
+              </div>
+              <div class="text-[11px] text-stone-500">${item.tag}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0 ml-2">
+            <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${
+              item.active ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-600"
+            }">
+              ${item.active ? "待命中" : "已移出"}
+            </span>
+            <input type="checkbox" ${item.active ? "checked" : ""}
+              class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300 pointer-events-none">
+          </div>
+        `;
+
+        li.addEventListener("click", () => {
+          if (isSpinning) {
+            showToast("轉盤旋轉中，請稍候再調整名單喔！");
+            return;
+          }
+          item.active = !item.active;
+          renderRoster();
+          resizeAndDrawWheel();
+        });
+
+        rosterList.appendChild(li);
+      });
+    }
+
+    /**
+     * 彩帶慶祝粒子特效
+     */
+    function launchConfetti() {
+      const cCanvas = document.getElementById("confettiCanvas");
+      const cCtx = cCanvas.getContext("2d");
+      cCanvas.width = window.innerWidth;
+      cCanvas.height = window.innerHeight;
+
+      const colors = ["#F59E0B", "#EA580C", "#10B981", "#EC4899", "#FBBF24", "#3B82F6"];
+      const particles = Array.from({ length: 85 }, () => ({
+        x: cCanvas.width / 2 + (Math.random() - 0.5) * 180,
+        y: cCanvas.height / 2 - 40,
+        vx: (Math.random() - 0.5) * 14,
+        vy: (Math.random() - 0.8) * 14 - 3,
+        size: Math.random() * 7 + 5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 12,
+        alpha: 1
+      }));
+
+      let frame = 0;
+      function updateConfetti() {
+        frame++;
+        cCtx.clearRect(0, 0, cCanvas.width, cCanvas.height);
+
+        let alive = false;
+        particles.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.35; // 重力
+          p.vx *= 0.98;
+          p.rotation += p.vRot;
+          if (frame > 55) p.alpha -= 0.02;
+
+          if (p.alpha > 0 && p.y < cCanvas.height + 30) {
+            alive = true;
+            cCtx.save();
+            cCtx.globalAlpha = Math.max(0, p.alpha);
+            cCtx.translate(p.x, p.y);
+            cCtx.rotate((p.rotation * Math.PI) / 180);
+            cCtx.fillStyle = p.color;
+            cCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+            cCtx.restore();
+          }
+        });
+
+        if (alive) {
+          requestAnimationFrame(updateConfetti);
+        } else {
+          cCtx.clearRect(0, 0, cCanvas.width, cCanvas.height);
+        }
+      }
+
+      requestAnimationFrame(updateConfetti);
+    }
+
+    // 事件綁定
+    spinBtn.addEventListener("click", startSpin);
+    confirmWinnerBtn.addEventListener("click", closeWinnerModal);
+
+    resetAllBtn.addEventListener("click", () => {
+      if (isSpinning) return;
+      candidates.forEach(c => (c.active = true));
+      renderRoster();
+      resizeAndDrawWheel();
+      showToast("已重置全部 9 位茶包新生名單！");
+    });
+
+    soundToggleBtn.addEventListener("click", () => {
+      soundEnabled = !soundEnabled;
+      soundIcon.textContent = soundEnabled ? "🔊" : "🔇";
+      soundLabel.textContent = soundEnabled ? "音效：開啟" : "音效：靜音";
+      if (soundEnabled) playTickSound();
+    });
+
+    window.addEventListener("resize", resizeAndDrawWheel);
+
+    // 頁面載入初始化
+    window.onload = function () {
+      renderRoster();
+      resizeAndDrawWheel();
+    };
+  </script>
+</body>
+</html>
